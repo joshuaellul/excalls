@@ -760,6 +760,7 @@ type CallArgs struct {
 	Value      *hexutil.Big      `json:"value"`
 	Data       *hexutil.Bytes    `json:"data"`
 	AccessList *types.AccessList `json:"accessList"`
+	ExcallList *types.ExcallList `json:"excallList"`
 }
 
 // ToMessage converts CallArgs to the Message type used by the core evm
@@ -799,7 +800,12 @@ func (args *CallArgs) ToMessage(globalGasCap uint64) types.Message {
 		accessList = *args.AccessList
 	}
 
-	msg := types.NewMessage(addr, args.To, 0, value, gas, gasPrice, data, accessList, false)
+	var excallList types.ExcallList
+	if args.ExcallList != nil {
+		excallList = *args.ExcallList
+	}
+
+	msg := types.NewMessage(addr, args.To, 0, value, gas, gasPrice, data, accessList, excallList, false)
 	return msg
 }
 
@@ -892,7 +898,7 @@ func DoCall(ctx context.Context, b Backend, args CallArgs, blockNrOrHash rpc.Blo
 
 	// Execute the message.
 	gp := new(core.GasPool).AddGas(math.MaxUint64)
-	result, err := core.ApplyMessage(evm, msg, gp)
+	result, err := core.ApplyMessage(evm, msg, gp, nil)
 	if err := vmError(); err != nil {
 		return nil, err
 	}
@@ -1230,6 +1236,7 @@ type RPCTransaction struct {
 	Value            *hexutil.Big      `json:"value"`
 	Type             hexutil.Uint64    `json:"type"`
 	Accesses         *types.AccessList `json:"accessList,omitempty"`
+	Excalls          *types.ExcallList `json:"excallList,omitempty"`
 	ChainID          *hexutil.Big      `json:"chainId,omitempty"`
 	V                *hexutil.Big      `json:"v"`
 	R                *hexutil.Big      `json:"r"`
@@ -1276,6 +1283,12 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 		result.Accesses = &al
 		result.ChainID = (*hexutil.Big)(tx.ChainId())
 	}
+	if tx.Type() == types.ExcallListTxType {
+		el := tx.ExcallList()
+		result.Excalls = &el
+		result.ChainID = (*hexutil.Big)(tx.ChainId())
+	}
+
 	return result
 }
 
@@ -1322,6 +1335,12 @@ type accessListResult struct {
 	GasUsed    hexutil.Uint64    `json:"gasUsed"`
 }
 
+type excallListResult struct {
+	Excalllist *types.ExcallList `json:"excallList"`
+	Error      string            `json:"error,omitempty"`
+	GasUsed    hexutil.Uint64    `json:"gasUsed"`
+}
+
 // CreateAccessList creates a EIP-2930 type AccessList for the given transaction.
 // Reexec and BlockNrOrHash can be specified to create the accessList on top of a certain state.
 func (s *PublicBlockChainAPI) CreateAccessList(ctx context.Context, args SendTxArgs, blockNrOrHash *rpc.BlockNumberOrHash) (*accessListResult, error) {
@@ -1339,6 +1358,22 @@ func (s *PublicBlockChainAPI) CreateAccessList(ctx context.Context, args SendTxA
 	}
 	return result, nil
 }
+
+/*func (s *PublicBlockChainAPI) CreateExcallList(ctx context.Context, args SendTxArgs, blockNrOrHash *rpc.BlockNumberOrHash) (*excallListResult, error) {
+	bNrOrHash := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
+	if blockNrOrHash != nil {
+		bNrOrHash = *blockNrOrHash
+	}
+	ecl, gasUsed, vmerr, err := ExcallList(ctx, s.b, bNrOrHash, args)
+	if err != nil {
+		return nil, err
+	}
+	result := &excallListResult{Excalllist: &ecl, GasUsed: hexutil.Uint64(gasUsed)}
+	if vmerr != nil {
+		result.Error = vmerr.Error()
+	}
+	return result, nil
+}*/
 
 // AccessList creates an access list for the given transaction.
 // If the accesslist creation fails an error is returned.
@@ -1393,7 +1428,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 		}
 		// Copy the original db so we don't modify it
 		statedb := db.Copy()
-		msg := types.NewMessage(args.From, args.To, uint64(*args.Nonce), args.Value.ToInt(), uint64(*args.Gas), args.GasPrice.ToInt(), input, accessList, false)
+		msg := types.NewMessage(args.From, args.To, uint64(*args.Nonce), args.Value.ToInt(), uint64(*args.Gas), args.GasPrice.ToInt(), input, accessList, nil, false)
 
 		// Apply the transaction with the access list tracer
 		tracer := vm.NewAccessListTracer(accessList, args.From, to, precompiles)
@@ -1402,7 +1437,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 		if err != nil {
 			return nil, 0, nil, err
 		}
-		res, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.Gas()))
+		res, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.Gas()), nil)
 		if err != nil {
 			return nil, 0, nil, fmt.Errorf("failed to apply transaction: %v err: %v", args.toTransaction().Hash(), err)
 		}
@@ -1612,6 +1647,7 @@ type SendTxArgs struct {
 
 	// For non-legacy transactions
 	AccessList *types.AccessList `json:"accessList,omitempty"`
+	ExcallList *types.ExcallList `json:"excallList,omitempty"`
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
 }
 
@@ -1664,6 +1700,7 @@ func (args *SendTxArgs) setDefaults(ctx context.Context, b Backend) error {
 			Value:      args.Value,
 			Data:       input,
 			AccessList: args.AccessList,
+			ExcallList: args.ExcallList,
 		}
 		pendingBlockNr := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
 		estimated, err := DoEstimateGas(ctx, b, callArgs, pendingBlockNr, b.RPCGasCap())
@@ -1698,6 +1735,17 @@ func (args *SendTxArgs) toTransaction() *types.Transaction {
 			GasPrice: (*big.Int)(args.GasPrice),
 			Value:    (*big.Int)(args.Value),
 			Data:     input,
+		}
+	} else if args.ExcallList != nil {
+		data = &types.ExcallListTx{
+			To:         args.To,
+			ChainID:    (*big.Int)(args.ChainID),
+			Nonce:      uint64(*args.Nonce),
+			Gas:        uint64(*args.Gas),
+			GasPrice:   (*big.Int)(args.GasPrice),
+			Value:      (*big.Int)(args.Value),
+			Data:       input,
+			ExcallList: *args.ExcallList,
 		}
 	} else {
 		data = &types.AccessListTx{

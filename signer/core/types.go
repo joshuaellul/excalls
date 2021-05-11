@@ -79,6 +79,7 @@ type SendTxArgs struct {
 
 	// For non-legacy transactions
 	AccessList *types.AccessList `json:"accessList,omitempty"`
+	ExcallList *types.ExcallList `json:"excallList,omitempty"`
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
 }
 
@@ -111,6 +112,17 @@ func (args *SendTxArgs) toTransaction() *types.Transaction {
 			GasPrice: (*big.Int)(&args.GasPrice),
 			Value:    (*big.Int)(&args.Value),
 			Data:     input,
+		}
+	} else if args.ExcallList != nil {
+		data = &types.ExcallListTx{
+			To:         to,
+			ChainID:    (*big.Int)(args.ChainID),
+			Nonce:      uint64(args.Nonce),
+			Gas:        uint64(args.Gas),
+			GasPrice:   (*big.Int)(&args.GasPrice),
+			Value:      (*big.Int)(&args.Value),
+			Data:       input,
+			ExcallList: *args.ExcallList,
 		}
 	} else {
 		data = &types.AccessListTx{

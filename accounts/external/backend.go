@@ -226,6 +226,10 @@ func (api *ExternalSigner) SignTx(account accounts.Account, tx *types.Transactio
 		accessList := tx.AccessList()
 		args.AccessList = &accessList
 	}
+	if tx.Type() == types.ExcallListTxType {
+		excallList := tx.ExcallList()
+		args.ExcallList = &excallList
+	}
 	var res signTransactionResult
 	if err := api.client.Call(&res, "account_signTransaction", args); err != nil {
 		return nil, err

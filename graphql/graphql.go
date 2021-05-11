@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"strconv"
 	"time"
 
@@ -155,6 +156,14 @@ func (l *Log) Data(ctx context.Context) hexutil.Bytes {
 type AccessTuple struct {
 	address     common.Address
 	storageKeys *[]common.Hash
+}
+
+type ExcallTuple struct {
+	msg  []byte
+	sigr *big.Int
+	sigs *big.Int
+	pubx *big.Int
+	puby *big.Int
 }
 
 func (at *AccessTuple) Address(ctx context.Context) common.Address {
@@ -376,6 +385,25 @@ func (t *Transaction) AccessList(ctx context.Context) (*[]*AccessTuple, error) {
 		ret = append(ret, &AccessTuple{
 			address:     al.Address,
 			storageKeys: &al.StorageKeys,
+		})
+	}
+	return &ret, nil
+}
+
+func (t *Transaction) ExcallList(ctx context.Context) (*[]*ExcallTuple, error) {
+	tx, err := t.resolve(ctx)
+	if err != nil || tx == nil {
+		return nil, err
+	}
+	excallList := tx.ExcallList()
+	ret := make([]*ExcallTuple, 0, len(excallList))
+	for _, al := range excallList {
+		ret = append(ret, &ExcallTuple{
+			msg:  al.Msg,
+			sigr: al.SigR,
+			sigs: al.SigS,
+			pubx: al.PubX,
+			puby: al.PubY,
 		})
 	}
 	return &ret, nil

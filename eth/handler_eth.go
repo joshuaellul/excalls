@@ -30,6 +30,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/trie"
+
+	_ "unsafe"
 )
 
 // ethHandler implements the eth.Backend interface to handle the various network
@@ -58,6 +60,10 @@ func (h *ethHandler) PeerInfo(id enode.ID) interface{} {
 func (h *ethHandler) AcceptTxs() bool {
 	return atomic.LoadUint32(&h.acceptTxs) == 1
 }
+
+//go:noescape
+//go:linkname getNoTxPool github.com/ethereum/go-ethereum/cmd/utils.GetNoTxPool
+func getNoTxPool() bool
 
 // Handle is invoked from a peer's message handler when it receives a new remote
 // message that the handler couldn't consume and serve itself.
@@ -94,6 +100,9 @@ func (h *ethHandler) Handle(peer *eth.Peer, packet eth.Packet) error {
 		return h.txFetcher.Notify(peer.ID(), *packet)
 
 	case *eth.TransactionsPacket:
+		if getNoTxPool() {
+			return nil
+		}
 		return h.txFetcher.Enqueue(peer.ID(), *packet, false)
 
 	case *eth.PooledTransactionsPacket:

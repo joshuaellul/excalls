@@ -143,7 +143,9 @@ func (r *Receipt) EncodeRLP(w io.Writer) error {
 	}
 	// It's an EIP-2718 typed TX receipt.
 	if r.Type != AccessListTxType {
-		return ErrTxTypeNotSupported
+		if r.Type != ExcallListTxType {
+			return ErrTxTypeNotSupported
+		}
 	}
 	buf := encodeBufferPool.Get().(*bytes.Buffer)
 	defer encodeBufferPool.Put(buf)
@@ -180,7 +182,7 @@ func (r *Receipt) DecodeRLP(s *rlp.Stream) error {
 			return errEmptyTypedReceipt
 		}
 		r.Type = b[0]
-		if r.Type == AccessListTxType {
+		if r.Type == AccessListTxType || r.Type == ExcallListTxType {
 			var dec receiptRLP
 			if err := rlp.DecodeBytes(b[1:], &dec); err != nil {
 				return err
@@ -345,6 +347,9 @@ func (rs Receipts) EncodeIndex(i int, w *bytes.Buffer) {
 		rlp.Encode(w, data)
 	case AccessListTxType:
 		w.WriteByte(AccessListTxType)
+		rlp.Encode(w, data)
+	case ExcallListTxType:
+		w.WriteByte(ExcallListTxType)
 		rlp.Encode(w, data)
 	default:
 		// For unsupported types, write nothing. Since this is for

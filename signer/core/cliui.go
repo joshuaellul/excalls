@@ -130,6 +130,12 @@ func (ui *CommandlineUI) ApproveTx(request *SignTxRequest) (SignTxResponse, erro
 			}
 		}
 	}
+	if list := request.Transaction.ExcallList; list != nil {
+		fmt.Printf("Excalllist\n")
+		for i, el := range *list {
+			fmt.Printf(" %d. %v\n", i, el.Msg)
+		}
+	}
 	if request.Transaction.Data != nil {
 		d := *request.Transaction.Data
 		if len(d) > 0 {

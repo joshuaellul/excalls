@@ -98,6 +98,7 @@ type StateDB struct {
 
 	// Per-transaction access list
 	accessList *accessList
+	excallList *excallList
 
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
@@ -137,6 +138,7 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		preimages:           make(map[common.Hash][]byte),
 		journal:             newJournal(),
 		accessList:          newAccessList(),
+		excallList:          newExcallList(),
 		hasher:              crypto.NewKeccakState(),
 	}
 	if sdb.snaps != nil {

@@ -75,6 +75,14 @@ const schema string = `
         storageKeys : [Bytes32!]
     }
 
+    type ExcallTuple{
+        msg: Bytes!
+        sigr: BigInt!
+        sigs: BigInt!
+        pubx: BigInt!
+        puby: BigInt!        
+    }
+
     # Transaction is an Ethereum transaction.
     type Transaction {
         # Hash is the hash of this transaction.
@@ -127,6 +135,7 @@ const schema string = `
         #Envelope transaction support
         type: Int
         accessList: [AccessTuple!]
+        excallList: [ExcallTuple!]
     }
 
     # BlockFilterCriteria encapsulates log filter criteria for a filter applied

@@ -1,3 +1,7 @@
+The go-ethereum code base was modified by Joshua Ellul and Gordon J. Pace to demonstrate that blockchain systems can execute calls to external systems. Further information available from: <a href="https://joshuaellul.github.io/excalls">https://joshuaellul.github.io/excalls</a>
+
+Below is the original AUTHORS file content at the time of cloning the go-ethereum repository.
+
 # This is the official list of go-ethereum authors for copyright purposes.
 
 a e r t h <aerth@users.noreply.github.com>

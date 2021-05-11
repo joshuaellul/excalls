@@ -71,6 +71,14 @@ import (
 	"gopkg.in/urfave/cli.v1"
 )
 
+var (
+	configHack *node.Config
+)
+
+func GetNoTxPool() bool {
+	return configHack.NoTxPool
+}
+
 func init() {
 	cli.AppHelpTemplate = `{{.Name}} {{if .Flags}}[global options] {{end}}command{{if .Flags}} [command options]{{end}} [arguments...]
 
@@ -760,6 +768,11 @@ var (
 		Name:  "catalyst",
 		Usage: "Catalyst mode (eth2 integration testing)",
 	}
+
+	NoTxPool = cli.BoolFlag{
+		Name:  "notxpool",
+		Usage: "Do not accept transactions (only accept blocks from peers)",
+	}
 )
 
 // MakeDataDir retrieves the currently requested data directory, terminating
@@ -1231,6 +1244,10 @@ func SetNodeConfig(ctx *cli.Context, cfg *node.Config) {
 	if ctx.GlobalIsSet(InsecureUnlockAllowedFlag.Name) {
 		cfg.InsecureUnlockAllowed = ctx.GlobalBool(InsecureUnlockAllowedFlag.Name)
 	}
+	if ctx.GlobalIsSet(NoTxPool.Name) {
+		cfg.NoTxPool = ctx.GlobalBool(NoTxPool.Name)
+	}
+	configHack = cfg
 }
 
 func setSmartCard(ctx *cli.Context, cfg *node.Config) {

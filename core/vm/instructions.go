@@ -17,12 +17,127 @@
 package vm
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/md5"
+	"hash"
+	"io"
+	"math/big"
+	"net/http"
+	"strings"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 )
+
+var cachedResponses map[string]string = make(map[string]string)
+
+func getStringFromUrl(url string) string {
+	resp, err := http.Get(url)
+	if err != nil {
+		return err.Error()
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err.Error()
+	}
+	bodys := string(body)
+	resp.Body.Close()
+	return bodys
+}
+
+func verifyEXCALL(msg string, sigr *big.Int, sigs *big.Int, pubx *big.Int, puby *big.Int) bool {
+	var h hash.Hash
+	h = md5.New()
+	io.WriteString(h, msg)
+	signhash := h.Sum(nil)
+
+	var pubkey = &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     pubx,
+		Y:     puby,
+	}
+	return ecdsa.Verify(pubkey, signhash, sigr, sigs)
+}
+
+func handleEXCALLFromTx(http string, scope *ScopeContext) bool {
+	if scope.Tx == nil {
+		//there's no transaction this is just calculating gas
+		scope.Stack.push(new(uint256.Int).SetBytes((common.RightPadBytes([]byte(http), 32))))
+		return true
+	}
+
+	tuple := scope.Tx.ExcallList().GetEXCALLTuple()
+	if tuple != nil {
+		if verifyEXCALL(string(tuple.Msg), tuple.SigR, tuple.SigS, tuple.PubX, tuple.PubY) {
+			bs := []byte(tuple.Msg)
+			scope.Stack.push(new(uint256.Int).SetBytes((common.RightPadBytes(bs, 32))))
+			log.Info("EXCALL: retrieved from trsansaction: " + http)
+			return true
+		} else {
+			log.Info("EXCALL: VERIFICATION FAILED: " + http)
+		}
+	}
+	return false
+}
+
+func handleEXCALLFromLocalCache(http string, scope *ScopeContext) bool {
+	var msg string
+	var ok bool
+	msg, ok = cachedResponses[http]
+	if ok {
+		integer := new(uint256.Int)
+		bs := []byte(msg)
+		scope.Stack.push(integer.SetBytes((common.RightPadBytes(bs, 32))))
+		log.Info("EXCALL: retrieved from local cache:" + http)
+		return true
+	}
+	return false
+}
+
+func performEXCALL(http string, scope *ScopeContext) {
+
+	response := getStringFromUrl(http)
+	lines := strings.Split(response, "\n")
+	msg := lines[0]
+	sigr, _ := new(big.Int).SetString(lines[1], 16)
+	sigs, _ := new(big.Int).SetString(lines[2], 16)
+
+	//here we're trusting the web server itself to deliver its public key
+	//this could instead be hard coded into tghe smart contract
+	//or a public certificate could be looked up
+	var x, y *big.Int
+	x, _ = new(big.Int).SetString(lines[3], 16)
+	y, _ = new(big.Int).SetString(lines[4], 16)
+
+	if verifyEXCALL(msg, sigr, sigs, x, y) {
+		bs := []byte(msg)
+		cachedResponses[http] = msg
+		if scope.Tx != nil {
+			scope.Tx.SetEXCALLTuple(bs, sigr, sigs, x, y)
+		}
+		integer := new(uint256.Int)
+		scope.Stack.push(integer.SetBytes((common.RightPadBytes(bs, 32))))
+		log.Info("EXCALL: made to " + http)
+		return
+	}
+	log.Info("EXCALL: ERROR excalling to " + http)
+	return
+}
+
+func opEXCALL(http string, pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+
+	if !handleEXCALLFromTx(http, scope) {
+		//if !handleEXCALLFromLocalCache(http, scope) {
+		performEXCALL(http, scope)
+		//}
+	}
+	return nil, nil
+}
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	x, y := scope.Stack.pop(), scope.Stack.peek()
@@ -582,7 +697,7 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 		bigVal = value.ToBig()
 	}
 
-	res, addr, returnGas, suberr := interpreter.evm.Create(scope.Contract, input, gas, bigVal)
+	res, addr, returnGas, suberr := interpreter.evm.Create(scope.Contract, input, gas, bigVal, scope.Tx)
 	// Push item on the stack based on the returned error. If the ruleset is
 	// homestead we must check for CodeStoreOutOfGasError (homestead only
 	// rule) and treat as an error, if the ruleset is frontier we must
@@ -623,7 +738,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		bigEndowment = endowment.ToBig()
 	}
 	res, addr, returnGas, suberr := interpreter.evm.Create2(scope.Contract, input, gas,
-		bigEndowment, &salt)
+		bigEndowment, &salt, scope.Tx)
 	// Push item on the stack based on the returned error.
 	if suberr != nil {
 		stackvalue.Clear()
@@ -660,7 +775,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 		bigVal = value.ToBig()
 	}
 
-	ret, returnGas, err := interpreter.evm.Call(scope.Contract, toAddr, args, gas, bigVal)
+	ret, returnGas, err := interpreter.evm.Call(scope.Contract, toAddr, args, gas, bigVal, scope.Tx)
 
 	if err != nil {
 		temp.Clear()
@@ -695,7 +810,7 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 		bigVal = value.ToBig()
 	}
 
-	ret, returnGas, err := interpreter.evm.CallCode(scope.Contract, toAddr, args, gas, bigVal)
+	ret, returnGas, err := interpreter.evm.CallCode(scope.Contract, toAddr, args, gas, bigVal, scope.Tx)
 	if err != nil {
 		temp.Clear()
 	} else {
@@ -722,7 +837,7 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	// Get arguments from the memory.
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
 
-	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract, toAddr, args, gas)
+	ret, returnGas, err := interpreter.evm.DelegateCall(scope.Contract, toAddr, args, gas, scope.Tx)
 	if err != nil {
 		temp.Clear()
 	} else {
@@ -749,7 +864,7 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	// Get arguments from the memory.
 	args := scope.Memory.GetPtr(int64(inOffset.Uint64()), int64(inSize.Uint64()))
 
-	ret, returnGas, err := interpreter.evm.StaticCall(scope.Contract, toAddr, args, gas)
+	ret, returnGas, err := interpreter.evm.StaticCall(scope.Contract, toAddr, args, gas, scope.Tx)
 	if err != nil {
 		temp.Clear()
 	} else {
@@ -845,6 +960,15 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 		endMin := codeLen
 		if startMin+pushByteSize < endMin {
 			endMin = startMin + pushByteSize
+		}
+
+		if pushByteSize == 32 {
+			if strings.HasPrefix(string(scope.Contract.Code[startMin:endMin]), "http") {
+				s := string(scope.Contract.Code[startMin:endMin])
+				ret1, ret2 := opEXCALL(s, pc, interpreter, scope)
+				*pc += 32
+				return ret1, ret2
+			}
 		}
 
 		integer := new(uint256.Int)

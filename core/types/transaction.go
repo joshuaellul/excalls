@@ -42,6 +42,7 @@ var (
 const (
 	LegacyTxType = iota
 	AccessListTxType
+	ExcallListTxType
 )
 
 // Transaction is an Ethereum transaction.
@@ -71,6 +72,7 @@ type TxData interface {
 
 	chainID() *big.Int
 	accessList() AccessList
+	excallList() ExcallList
 	data() []byte
 	gas() uint64
 	gasPrice() *big.Int
@@ -80,6 +82,11 @@ type TxData interface {
 
 	rawSignatureValues() (v, r, s *big.Int)
 	setSignatureValues(chainID, v, r, s *big.Int)
+}
+
+func (tx *Transaction) SetEXCALLTuple(msg []byte, sigR *big.Int, sigS *big.Int, pubX *big.Int, pubY *big.Int) {
+	etx := tx.inner.(*ExcallListTx)
+	etx.SetEXCALLTuple(msg, sigR, sigS, pubX, pubY)
 }
 
 // EncodeRLP implements rlp.Encoder
@@ -155,7 +162,17 @@ func (tx *Transaction) UnmarshalBinary(b []byte) error {
 		if err != nil {
 			return err
 		}
-		tx.setDecoded(&data, len(b))
+		//set all transactions to excalls
+		var excallTx ExcallListTx
+		excallTx.ChainID = data.chainID()
+		excallTx.Nonce = data.Nonce
+		excallTx.GasPrice = data.GasPrice
+		excallTx.Gas = data.Gas
+		excallTx.To = data.To
+		excallTx.Value = data.Value
+		excallTx.Data = common.CopyBytes(data.Data)
+		excallTx.V, excallTx.R, excallTx.S = data.V, data.R, data.S
+		tx.setDecoded(&excallTx, len(b))
 		return nil
 	}
 	// It's an EIP2718 typed transaction envelope.
@@ -177,6 +194,10 @@ func (tx *Transaction) decodeTyped(b []byte) (TxData, error) {
 		var inner AccessListTx
 		err := rlp.DecodeBytes(b[1:], &inner)
 		return &inner, err
+	case ExcallListTxType:
+		var einner ExcallListTx
+		err := rlp.DecodeBytes(b[1:], &einner)
+		return &einner, err
 	default:
 		return nil, ErrTxTypeNotSupported
 	}
@@ -254,6 +275,10 @@ func (tx *Transaction) Data() []byte { return tx.inner.data() }
 // AccessList returns the access list of the transaction.
 func (tx *Transaction) AccessList() AccessList { return tx.inner.accessList() }
 
+func (tx *Transaction) ExcallList() ExcallList {
+	return tx.inner.excallList()
+}
+
 // Gas returns the gas limit of the transaction.
 func (tx *Transaction) Gas() uint64 { return tx.inner.gas() }
 
@@ -310,6 +335,9 @@ func (tx *Transaction) Hash() common.Hash {
 	var h common.Hash
 	if tx.Type() == LegacyTxType {
 		h = rlpHash(tx.inner)
+	} else if tx.Type() == ExcallListTxType {
+		txd := tx.inner.(*ExcallListTx).CopyWithoutExcalls()
+		h = prefixedRlpHash(tx.Type(), txd)
 	} else {
 		h = prefixedRlpHash(tx.Type(), tx.inner)
 	}
@@ -488,10 +516,11 @@ type Message struct {
 	gasPrice   *big.Int
 	data       []byte
 	accessList AccessList
+	excallList ExcallList
 	checkNonce bool
 }
 
-func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice *big.Int, data []byte, accessList AccessList, checkNonce bool) Message {
+func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *big.Int, gasLimit uint64, gasPrice *big.Int, data []byte, accessList AccessList, excallList ExcallList, checkNonce bool) Message {
 	return Message{
 		from:       from,
 		to:         to,
@@ -501,6 +530,7 @@ func NewMessage(from common.Address, to *common.Address, nonce uint64, amount *b
 		gasPrice:   gasPrice,
 		data:       data,
 		accessList: accessList,
+		excallList: excallList,
 		checkNonce: checkNonce,
 	}
 }
@@ -515,6 +545,7 @@ func (tx *Transaction) AsMessage(s Signer) (Message, error) {
 		amount:     tx.Value(),
 		data:       tx.Data(),
 		accessList: tx.AccessList(),
+		excallList: tx.ExcallList(),
 		checkNonce: true,
 	}
 
@@ -531,4 +562,5 @@ func (m Message) Gas() uint64            { return m.gasLimit }
 func (m Message) Nonce() uint64          { return m.nonce }
 func (m Message) Data() []byte           { return m.data }
 func (m Message) AccessList() AccessList { return m.accessList }
+func (m Message) ExcallList() ExcallList { return m.excallList }
 func (m Message) CheckNonce() bool       { return m.checkNonce }

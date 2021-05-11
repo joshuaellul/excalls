@@ -100,6 +100,7 @@ type stTransaction struct {
 	To          string              `json:"to"`
 	Data        []string            `json:"data"`
 	AccessLists []*types.AccessList `json:"accessLists,omitempty"`
+	ExcallLists []*types.ExcallList `json:"excallLists,omitempty"`
 	GasLimit    []uint64            `json:"gasLimit"`
 	Value       []string            `json:"value"`
 	PrivateKey  []byte              `json:"secretKey"`
@@ -193,7 +194,7 @@ func (t *StateTest) RunNoVerify(subtest StateSubtest, vmconfig vm.Config, snapsh
 	snapshot := statedb.Snapshot()
 	gaspool := new(core.GasPool)
 	gaspool.AddGas(block.GasLimit())
-	if _, err := core.ApplyMessage(evm, msg, gaspool); err != nil {
+	if _, err := core.ApplyMessage(evm, msg, gaspool, nil); err != nil {
 		statedb.RevertToSnapshot(snapshot)
 	}
 
@@ -297,7 +298,11 @@ func (tx *stTransaction) toMessage(ps stPostState) (core.Message, error) {
 	if tx.AccessLists != nil && tx.AccessLists[ps.Indexes.Data] != nil {
 		accessList = *tx.AccessLists[ps.Indexes.Data]
 	}
-	msg := types.NewMessage(from, to, tx.Nonce, value, gasLimit, tx.GasPrice, data, accessList, true)
+	var excallList types.ExcallList
+	if tx.ExcallLists != nil && tx.ExcallLists[ps.Indexes.Data] != nil {
+		excallList = *tx.ExcallLists[ps.Indexes.Data]
+	}
+	msg := types.NewMessage(from, to, tx.Nonce, value, gasLimit, tx.GasPrice, data, accessList, excallList, true)
 	return msg, nil
 }
 
