@@ -62,6 +62,22 @@ func (el ExcallList) GetEXCALLTuple() *ExcallTuple {
 	return nil
 }
 
+func (tx *ExcallListTx) getLegacyTx() *LegacyTx {
+	lt := LegacyTx{
+		Nonce:    tx.Nonce,
+		GasPrice: new(big.Int).Set(tx.GasPrice),
+		Gas:      tx.Gas,
+		To:       tx.To,
+		Value:    new(big.Int).Set(tx.Value),
+		Data:     common.CopyBytes(tx.Data),
+		V:        new(big.Int).Set(tx.V),
+		R:        new(big.Int).Set(tx.R),
+		S:        new(big.Int).Set(tx.S),
+	}
+
+	return &lt
+}
+
 func (tx *ExcallListTx) SetEXCALLTuple(msg []byte, sigR *big.Int, sigS *big.Int, pubX *big.Int, pubY *big.Int) {
 	tx.ExcallList = make(ExcallList, 1)
 	tx.ExcallList[0] = ExcallTuple{

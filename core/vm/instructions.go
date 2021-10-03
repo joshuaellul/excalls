@@ -64,42 +64,42 @@ func verifyEXCALL(msg string, sigr *big.Int, sigs *big.Int, pubx *big.Int, puby 
 	return ecdsa.Verify(pubkey, signhash, sigr, sigs)
 }
 
-func handleEXCALLFromTx(http string, scope *ScopeContext) bool {
+func handleEXCALLFromTx(http string, scope *ScopeContext) (bool, string) {
 	if scope.Tx == nil {
 		//there's no transaction this is just calculating gas
-		scope.Stack.push(new(uint256.Int).SetBytes((common.RightPadBytes([]byte(http), 32))))
-		return true
+		//scope.Stack.push(new(uint256.Int).SetBytes((common.RightPadBytes([]byte(http), 32))))
+		return true, http
 	}
 
 	tuple := scope.Tx.ExcallList().GetEXCALLTuple()
 	if tuple != nil {
 		if verifyEXCALL(string(tuple.Msg), tuple.SigR, tuple.SigS, tuple.PubX, tuple.PubY) {
-			bs := []byte(tuple.Msg)
-			scope.Stack.push(new(uint256.Int).SetBytes((common.RightPadBytes(bs, 32))))
+			//bs := []byte(tuple.Msg)
+			//scope.Stack.push(new(uint256.Int).SetBytes((common.RightPadBytes(bs, 32))))
 			log.Info("EXCALL: retrieved from trsansaction: " + http)
-			return true
+			return true, string(tuple.Msg)
 		} else {
 			log.Info("EXCALL: VERIFICATION FAILED: " + http)
 		}
 	}
-	return false
+	return false, http
 }
 
 func handleEXCALLFromLocalCache(http string, scope *ScopeContext) bool {
-	var msg string
+	//var msg string
 	var ok bool
-	msg, ok = cachedResponses[http]
+	//msg, ok = cachedResponses[http]
 	if ok {
-		integer := new(uint256.Int)
-		bs := []byte(msg)
-		scope.Stack.push(integer.SetBytes((common.RightPadBytes(bs, 32))))
+		//integer := new(uint256.Int)
+		//bs := []byte(msg)
+		//scope.Stack.push(integer.SetBytes((common.RightPadBytes(bs, 32))))
 		log.Info("EXCALL: retrieved from local cache:" + http)
 		return true
 	}
 	return false
 }
 
-func performEXCALL(http string, scope *ScopeContext) {
+func performEXCALL(http string, scope *ScopeContext) string {
 
 	response := getStringFromUrl(http)
 	lines := strings.Split(response, "\n")
@@ -120,23 +120,24 @@ func performEXCALL(http string, scope *ScopeContext) {
 		if scope.Tx != nil {
 			scope.Tx.SetEXCALLTuple(bs, sigr, sigs, x, y)
 		}
-		integer := new(uint256.Int)
-		scope.Stack.push(integer.SetBytes((common.RightPadBytes(bs, 32))))
+		//integer := new(uint256.Int)
+		//scope.Stack.push(integer.SetBytes((common.RightPadBytes(bs, 32))))
 		log.Info("EXCALL: made to " + http)
-		return
+		return msg
 	}
 	log.Info("EXCALL: ERROR excalling to " + http)
-	return
+	return http
 }
 
-func opEXCALL(http string, pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+func opEXCALL(http string, pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (string, error) {
 
-	if !handleEXCALLFromTx(http, scope) {
+	ok, ret := handleEXCALLFromTx(http, scope)
+	if !ok {
 		//if !handleEXCALLFromLocalCache(http, scope) {
-		performEXCALL(http, scope)
+		ret = performEXCALL(http, scope)
 		//}
 	}
-	return nil, nil
+	return ret, nil
 }
 
 func opAdd(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -965,9 +966,15 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 		if pushByteSize == 32 {
 			if strings.HasPrefix(string(scope.Contract.Code[startMin:endMin]), "http") {
 				s := string(scope.Contract.Code[startMin:endMin])
-				ret1, ret2 := opEXCALL(s, pc, interpreter, scope)
+				ret, err := opEXCALL(s, pc, interpreter, scope)
+				if err != nil {
+					ret = s
+				}
+				integer := new(uint256.Int)
+				scope.Stack.push(integer.SetBytes(common.RightPadBytes(
+					[]byte(ret), pushByteSize)))
 				*pc += 32
-				return ret1, ret2
+				return nil, nil
 			}
 		}
 

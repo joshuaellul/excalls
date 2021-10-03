@@ -352,7 +352,7 @@ func (sub *ClientSubscription) forward() (unsubscribeServer bool, err error) {
 				return true, err
 			}
 			if buffer.Len() == maxClientSubscriptionBuffer {
-				return true, ErrSubscriptionQueueOverflow
+				//return true, ErrSubscriptionQueueOverflow
 			}
 			buffer.PushBack(val)
 
