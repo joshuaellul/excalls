@@ -38,7 +38,7 @@ a) Allocate funds to your test account: Open geth-network/genesis.json and add a
 b) Initialise the two nodes:
 Initialise the miner: Execute `./build/bin/geth init --datadir ./geth-network/miner ./geth-network/genesis.json`
 
-Initialise the verifier: Execute `./build/bin/geth init --datadir ./geth-network/verifier ./geth-network/genesis.json
+Initialise the verifier: Execute `./build/bin/geth init --datadir ./geth-network/verifier ./geth-network/genesis.json`
 
 c) Run the miner (set to only accept connections from localhost)
 Execute `./build/bin/geth --datadir ./geth-network/miner/ --nodiscover --verbosity 3 --networkid 15 --netrestrict 127.0.0.1/8 --rpc --rpcaddr 0.0.0.0 --rpcport 22004 --rpccorsdomain "*" --rpc.allow-unprotected-txs --allow-insecure-unlock --keystore ./geth-network/miner/keystore/ --unlock 0x8305ab65E82F383041b878021Cf08712994cE1AF --password ./geth-network/miner/keystore/pw1.txt --mine`
@@ -88,11 +88,11 @@ contract TestEXCALL {
     
     
 }
-'''
+```
 
 Then after calling getECT(), if you check the value of the response string, it should return back a response from the URL that has been verified.
 
-In the miner's geth console outtput you should see a log entry along the following lines: ```EXCALL: made to http://joshuaellul.github.io/aaa'''
+In the miner's geth console outtput you should see a log entry along the following lines: `EXCALL: made to http://joshuaellul.github.io/aaa`
 This means that the miner performed the external call.
 
 In the verifier's geth console output you should see a log entry along the following lines: EXCALL: retrieved from trsansaction: http://joshuaellul.github.io/aaa 
