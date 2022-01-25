@@ -1,0 +1,25 @@
+    goroutines: 1                   2                   3               4
+excalls local server alwaysWin
+10              
+100             
+1000            
+10000           
+                        
+oracle local 
+10              
+100             
+1000            
+10000                                                                   21.170055564s
+
+excalls github  
+10              
+100             
+1000                                                                    2m37.455874636s
+                                                                        
+
+oracle github 
+10              
+100             
+1000                                                                    3m23.308948704s
+
+
